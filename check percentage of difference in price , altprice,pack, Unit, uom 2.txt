@@ -1,0 +1,208 @@
+-- this is for diff between two table to check percentage of difference in price , altprice,pack, Unit, uom
+
+EXEC QA_DATA_PERCENTAGE 'BackUp_Abcwine_02_13_2024', 'BackUp_Abcwine_02_20_2024', 'product_id', 'extra1';
+
+Create or alter PROCEDURE QA_DATA_PERCENTAGE
+(
+    @newTableName NVARCHAR(255),
+    @oldTableName NVARCHAR(255),
+    @productColumnName NVARCHAR(255),
+    @brandColumnName NVARCHAR(255)
+)
+AS
+BEGIN
+    DECLARE @sql NVARCHAR(MAX);
+ 
+ 
+    SET @sql = '
+WITH Table_1_count AS (
+    SELECT
+        COUNT( distinct ' + @productColumnName + ') AS new_dist_count,
+        zip,
+        job_number,
+        ' + @brandColumnName + ' AS brand
+    FROM
+        ' + @newTableName + '
+    GROUP BY
+        zip, ' + @brandColumnName + ', job_number
+),
+Table_2_count AS (
+    SELECT
+        COUNT(distinct ' + @productColumnName + ') AS old_dis_count,
+        zip,
+        job_number,
+        ' + @brandColumnName + ' AS brand
+    FROM
+        ' + @oldTableName + '
+    GROUP BY
+        zip, ' + @brandColumnName + ', job_number
+),
+Table_4_price AS (
+    SELECT
+        COUNT(distinct a.' + @productColumnName + ') AS Price_not_matched,
+        a.zip,
+        a.' + @brandColumnName + ' AS brand
+    FROM
+        ' + @newTableName + ' AS a
+    INNER JOIN
+        ' + @oldTableName + ' AS b
+    ON
+        a.' + @productColumnName + ' = b.' + @productColumnName + '
+        AND a.zip = b.zip 
+        AND a.' + @brandColumnName + ' = b.' + @brandColumnName + '
+    WHERE
+        a.eprice <> b.eprice
+    GROUP BY
+        a.zip, a.' + @brandColumnName + '
+),
+Table_5_Altprice AS (
+    SELECT
+        COUNT(a.ealtprice) AS Altprice_not_matched,
+        a.zip,
+        a.' + @brandColumnName + ' AS brand
+    FROM
+        ' + @newTableName + ' AS a
+    INNER JOIN
+        ' + @oldTableName + ' AS b
+    ON
+        a.' + @productColumnName + ' = b.' + @productColumnName + ' AND a.zip = b.zip AND a.' + @brandColumnName + ' = b.' + @brandColumnName + '
+		where a.ealtprice<>b.ealtprice 
+		and a.ealtprice !=''''
+		and b.ealtprice !=''''
+    GROUP BY
+        a.zip, a.' + @brandColumnName + '
+),
+Table_6_unit AS (
+    SELECT
+        COUNT(a.unit) AS Unit_not_matched,
+        a.zip,
+        a.' + @brandColumnName + ' AS brand
+    FROM
+        ' + @newTableName + ' AS a
+    INNER JOIN
+        ' + @oldTableName + ' AS b
+    ON
+        a.' + @productColumnName + ' = b.' + @productColumnName + ' AND a.zip = b.zip AND a.' + @brandColumnName + ' = b.' + @brandColumnName + '
+		where a.unit<>b.unit 
+    GROUP BY
+        a.zip, a.' + @brandColumnName + '
+),
+Table_7_uom AS (
+    SELECT
+        COUNT(a.uom) AS UOM_not_matched,
+        a.zip,
+        a.' + @brandColumnName + ' AS brand
+    FROM
+        ' + @newTableName + ' AS a
+    INNER JOIN
+        ' + @oldTableName + ' AS b
+    ON
+        a.' + @productColumnName + ' = b.' + @productColumnName + ' AND a.zip = b.zip AND a.' + @brandColumnName + ' = b.' + @brandColumnName + '
+		where a.uom<>b.uom 
+    GROUP BY
+        a.zip, a.' + @brandColumnName + '
+),
+Table_8_pack AS (
+    SELECT
+        COUNT(a.pack) AS Pack_not_matched,
+        a.zip,
+        a.' + @brandColumnName + ' AS brand
+    FROM
+        ' + @newTableName + ' AS a
+    INNER JOIN
+        ' + @oldTableName + ' AS b
+    ON
+        a.' + @productColumnName + ' = b.' + @productColumnName + ' AND a.zip = b.zip AND a.' + @brandColumnName + ' = b.' + @brandColumnName + '
+		where a.pack<>b.pack 
+    GROUP BY
+        a.zip, a.' + @brandColumnName + '
+)
+SELECT
+    t1.job_number AS NEW_job_number,
+    t2.job_number AS OLD_job_number,
+    t1.zip AS new_zip,
+    t1.new_dist_count + t2.old_dis_count AS total_distinct_product_count,
+	COALESCE(t4.Price_not_matched,0) As Price_not_matched,
+    CONCAT(FORMAT((t4.Price_not_matched * 100.0) / NULLIF(t1.new_dist_count, 0), ''0.00''), ''%'') AS percentage_difference_Price,
+	CONCAT(FORMAT((t5.Altprice_not_matched * 100.0) / NULLIF(t1.new_dist_count, 0), ''0.00''), ''%'') AS percentage_difference_altprice,
+	CONCAT(FORMAT((t6.Unit_not_matched * 100.0) / NULLIF(t1.new_dist_count, 0), ''0.00''), ''%'') AS percentage_difference_unit,
+	CONCAT(FORMAT((t7.UOM_not_matched * 100.0) / NULLIF(t1.new_dist_count, 0), ''0.00''), ''%'') AS percentage_difference_uom,
+	CONCAT(FORMAT((t8.Pack_not_matched * 100.0) / NULLIF(t1.new_dist_count, 0), ''0.00''), ''%'') AS percentage_difference_pack
+	FROM
+    Table_1_count t1
+LEFT JOIN
+    Table_2_count t2
+ON
+    t1.zip = t2.zip AND t1.brand = t2.brand
+LEFT JOIN
+    Table_4_price t4
+ON 
+    t1.zip = t4.zip AND t1.brand = t4.brand
+LEFT JOIN
+    Table_5_Altprice t5
+ON 
+    t1.zip = t5.zip AND t1.brand = t5.brand
+LEFT JOIN
+    Table_6_unit t6
+ON 
+    t1.zip = t6.zip AND t1.brand = t6.brand
+LEFT JOIN
+    Table_7_uom t7
+ON 
+    t1.zip = t7.zip AND t1.brand = t7.brand
+LEFT JOIN
+    Table_8_pack t8
+ON 
+    t1.zip = t8.zip AND t1.brand = t8.brand
+ 
+ order by percentage_difference_price DESC
+	'
+ 
+	EXEC sp_executesql @sql;
+END;
+ 
+
+
+
+---- to fetch the column with data for which we need to check for higher percentage
+
+
+exec QA_CompareData 'backup_Albertsonsmarket_09_25_2023','backup_Albertsonsmarket_09_18_2023','product_id','site','altprice','75034';
+
+
+CREATE PROCEDURE QA_CompareData
+(
+    @tableName1 NVARCHAR(255),
+    @tableName2 NVARCHAR(255),
+    @productidColumn NVARCHAR(255),
+    @sitecolumn NVARCHAR(255),
+    @priceColumn NVARCHAR(255),
+    @zipColumn NVARCHAR(255)
+)
+WITH ENCRYPTION 
+AS
+BEGIN
+    DECLARE @sql NVARCHAR(MAX);
+    SET @zipColumn = REPLACE(@zipColumn, ' ', '');
+
+    SET @zipColumn = CAST(@zipColumn AS NVARCHAR(255));
+
+ 
+
+    SET @sql = N'
+
+ 
+
+    SELECT top 500 a.'+@productidColumn+',a.'+@priceColumn+' as OLD_File_'+@priceColumn+',b.'+@priceColumn+' as NEW_File_'+@priceColumn+',a.description,a.pageimage
+    FROM ' + QUOTENAME(@tableName1) + ' AS a
+    INNER JOIN ' + QUOTENAME(@tableName2) + ' AS b
+    ON a.' + QUOTENAME(@productidColumn) + ' = b.' + QUOTENAME(@productidColumn) + '
+    AND REPLACE(a.zip, '' '', '''') = REPLACE(b.zip, '' '', '''') 
+    AND a.' + QUOTENAME(@sitecolumn) + ' = b.' + QUOTENAME(@sitecolumn) + '
+    WHERE a.' + QUOTENAME(@priceColumn) + ' <> b.' + QUOTENAME(@priceColumn) + '
+    AND REPLACE(a.zip, '' '', '''') = @zipColumn';
+
+ 
+
+    EXEC sp_executesql @sql, N'@zipColumn NVARCHAR(255)', @zipColumn;
+END;
